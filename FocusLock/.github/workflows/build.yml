@@ -1,3 +1,6 @@
+permissions:
+  contents: write
+
 name: Build FocusLock
 
 on:
@@ -35,5 +38,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/FocusLock.exe
+          overwrite: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
