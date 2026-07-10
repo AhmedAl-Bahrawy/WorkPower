@@ -6,3 +6,5 @@ build/
 *.spec
 .env
 *.egg-info/
+.vscode/
+.venv/
