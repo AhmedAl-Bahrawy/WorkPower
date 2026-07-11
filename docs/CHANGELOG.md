@@ -35,8 +35,8 @@
 - `--onedir` mode: folder-based distribution with Install/Uninstall scripts
 - Professional output: `dist/FocusLock-3.0.0/` ready to ship
 - GitHub Actions: pip cache, distribution artifact, release notes
-- 30+ hidden imports for reliable PyInstaller builds
-- Auto-installs missing packages
+- Migrated from PyInstaller to Nuitka for faster startup and lower false positives
+- Auto-downloads MinGW64 compiler if not present
 
 ### Themes
 - New vibrant dark theme (#8b5cf6 purple accent)

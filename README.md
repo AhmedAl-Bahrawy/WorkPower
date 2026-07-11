@@ -60,10 +60,12 @@ Requires Python 3.10+ on Windows.
 ## Build a .exe
 
 ```bash
-python build.py --dist
+pip install nuitka ordered-set zstandard
+python scripts/build.py --release
+python scripts/release.py --zip
 ```
 
-Output goes to `dist/FocusLock-3.0.0/`. See [BUILD.md](BUILD.md) for full build details.
+Output goes to `dist/FocusLock-3.0.0/`. See [docs/BUILD.md](docs/BUILD.md) for full build details.
 
 ---
 
@@ -102,13 +104,19 @@ FocusLock/
 │       └── ui/
 │           ├── widgets.py            # Theme, CircularTimer, charts
 │           └── dialogs.py            # App/site picker dialogs
-├── build.py                          # Build orchestrator
-├── build.bat                         # Windows build wrapper
+├── scripts/
+│   ├── version.py                    # Single source of truth for version
+│   ├── build.py                      # Nuitka build orchestrator
+│   ├── clean.py                      # Build artifact cleanup
+│   └── release.py                    # Release packaging
+├── installer/
+│   └── focuslock.iss                 # Inno Setup installer script
 ├── workflows/build.yml               # GitHub Actions CI/CD
 ├── requirements.txt                  # Python dependencies
-├── BUILD.md                          # Technical build docs
-├── REFERENCE.md                      # Technical reference
-├── CHANGELOG.md                      # Version history
+├── docs/
+│   ├── BUILD.md                      # Technical build docs
+│   ├── REFERENCE.md                  # Technical reference
+│   └── CHANGELOG.md                  # Version history
 └── LICENSE                           # MIT
 ```
 
