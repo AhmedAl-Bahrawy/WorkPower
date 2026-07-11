@@ -59,13 +59,136 @@ Requires Python 3.10+ on Windows.
 
 ## Build a .exe
 
+### Prerequisites
+
+| Requirement | Why | How to get it |
+|-------------|-----|---------------|
+| **Python 3.10+** | Runtime | [python.org](https://python.org) — check "Add to PATH" |
+| **Windows 10/11** | Platform | Required for hosts file + registry features |
+| **C compiler** | Nuitka compiles Python to machine code | Auto-downloaded (see below) |
+
+The C compiler is handled automatically. Nuitka downloads [MinGW64](https://winlibs.com) (~250 MB) on first build and caches it. No manual install needed.
+
+> If you prefer MSVC (Visual Studio Build Tools), install it from [here](https://visualstudio.microsoft.com/visual-cpp-build-tools/) and Nuitka will use it instead.
+
+### Quick build (3 commands)
+
 ```bash
+git clone https://github.com/zadwen/FocusLock.git
+cd FocusLock
+pip install -r requirements.txt
 pip install nuitka ordered-set zstandard
 python scripts/build.py --release
 python scripts/release.py --zip
 ```
 
-Output goes to `dist/FocusLock-3.0.0/`. See [docs/BUILD.md](docs/BUILD.md) for full build details.
+This produces:
+
+```
+dist/
+├── FocusLock-3.0.0/          # Standalone folder (run FocusLock.exe from here)
+└── FocusLock-3.0.0.zip       # Zip for sharing (44 MB)
+```
+
+### Step-by-step build
+
+**1. Clone and install dependencies**
+
+```bash
+git clone https://github.com/zadwen/FocusLock.git
+cd FocusLock
+pip install -r requirements.txt        # PySide6, SQLAlchemy, psutil
+pip install nuitka ordered-set zstandard  # Build tools
+```
+
+**2. Build the executable**
+
+```bash
+python scripts/build.py --release
+```
+
+On first run, Nuitka will download MinGW64 (~250 MB). This is a one-time download, cached for future builds.
+
+Build takes **4-5 minutes** on a modern machine. Output goes to `build/nuitka_output/focuslock_app.dist/`.
+
+**3. Package for distribution**
+
+```bash
+python scripts/release.py --zip
+```
+
+This creates `dist/FocusLock-3.0.0/` with everything needed to run the app, plus a zip for sharing.
+
+**4. Test the build**
+
+```bash
+dist/FocusLock-3.0.0/FocusLock.exe
+```
+
+### Build modes
+
+```bash
+python scripts/build.py --release       # Optimized, LTO, version metadata (default)
+python scripts/build.py --development   # Faster build, minimal optimization
+python scripts/build.py --debug         # Debug symbols, no optimization
+```
+
+### Other scripts
+
+```bash
+python scripts/clean.py                 # Remove build artifacts
+python scripts/clean.py --all           # Also remove __pycache__
+python scripts/release.py --verify      # Check if build output exists
+python scripts/version.py               # Print current version (3.0.0)
+python scripts/version.py --bump patch  # 3.0.0 -> 3.0.1
+```
+
+### Create a Windows installer (optional)
+
+Requires [Inno Setup 6.x](https://jrsoftware.org/isinfo.php):
+
+```bash
+python scripts/build.py --release
+python scripts/release.py
+iscc installer/focuslock.iss
+```
+
+Output: `dist/FocusLock-3.0.0-Setup.exe`
+
+### Troubleshooting
+
+| Problem | Fix |
+|---------|-----|
+| `No C compiler detected` | Nuitka will auto-download MinGW64. Wait for the download (~250 MB). |
+| Build hangs at download | Your connection may be slow. The download is cached — rerun `build.py` to resume. |
+| `gcc.exe` not found after download | Delete `build/` and rerun. Nuitka will re-extract. |
+| `PySide6` errors | Run `pip install --upgrade PySide6` and rebuild. |
+| `ModuleNotFoundError` | Run `pip install -r requirements.txt` |
+| Website blocker doesn't work | Run the app as Administrator (hosts file requires admin). |
+| Antivirus blocks the exe | Add an exclusion for `dist/FocusLock-3.0.0/`. Nuitka builds occasionally trigger false positives. |
+
+### What the build produces
+
+```
+dist/FocusLock-3.0.0/
+├── FocusLock.exe          # The app (52 MB)
+├── python312.dll          # Python runtime
+├── qt6core.dll            # Qt framework
+├── qt6gui.dll
+├── qt6widgets.dll
+├── PySide6/               # Qt plugins + translations
+├── shiboken6/             # PySide6 bindings
+├── sqlalchemy/            # ORM
+├── psutil/                # Process management
+├── *.dll, *.pyd           # C extensions
+├── Install.bat            # Creates Desktop shortcut
+├── Uninstall.bat          # Removes shortcut
+├── README.txt             # End-user instructions
+├── LICENSE
+└── CHANGELOG.md
+```
+
+No Python installation needed on the target machine. Just zip and share.
 
 ---
 
@@ -111,7 +234,7 @@ FocusLock/
 │   └── release.py                    # Release packaging
 ├── installer/
 │   └── focuslock.iss                 # Inno Setup installer script
-├── workflows/build.yml               # GitHub Actions CI/CD
+├── .github/workflows/build.yml        # GitHub Actions CI/CD
 ├── requirements.txt                  # Python dependencies
 ├── docs/
 │   ├── BUILD.md                      # Technical build docs

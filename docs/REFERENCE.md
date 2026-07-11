@@ -36,7 +36,7 @@ FocusLock/
 │   └── release.py                    # Release packaging
 ├── installer/
 │   └── focuslock.iss                 # Inno Setup installer script
-├── workflows/build.yml               # GitHub Actions CI/CD
+├── .github/workflows/build.yml        # GitHub Actions CI/CD
 ├── requirements.txt                  # Python dependencies
 ├── requirements-build.txt            # Build-time dependencies
 ├── docs/
@@ -192,7 +192,7 @@ dist/
 
 ### GitHub Actions
 
-**File:** `workflows/build.yml`
+**File:** `.github/workflows/build.yml`
 
 **Triggers:**
 - Push tag `v*` (e.g., `v3.0.0`)
