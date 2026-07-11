@@ -17,17 +17,17 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install PyInstaller
-        run: pip install pyinstaller
+      - name: Install dependencies
+        run: pip install pyinstaller psutil sqlalchemy
 
       - name: Build .exe
         run: |
-          pyinstaller --onefile --windowed --name FocusLock src/focuslock.py
+          pyinstaller --onefile --windowed --name FocusLock --paths src src/focuslock_app.py
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: FocusLock-Windows
+          name: FocusLock-v3-Windows
           path: dist/FocusLock.exe
 
       - name: Create Release

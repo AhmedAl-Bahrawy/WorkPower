@@ -1,9 +1,23 @@
-"""Windows balloon notifications."""
+"""Windows balloon / toast notifications.
+
+Uses Qt's ``QSystemTrayIcon.showMessage`` when a tray icon is available,
+falling back to a PowerShell-based ``NotifyIcon`` otherwise.
+"""
 
 import subprocess
 
 
-def notify(title, message):
+def notify(title, message, tray_icon=None):
+    """Show a Windows notification.
+
+    If *tray_icon* (a ``QSystemTrayIcon``) is provided and visible, the
+    notification is sent through it.  Otherwise a lightweight PowerShell
+    script is spawned.
+    """
+    if tray_icon is not None and tray_icon.isVisible():
+        tray_icon.showMessage(title, message)
+        return
+
     safe_title = title.replace("'", "''")
     safe_msg = message.replace("'", "''")
     script = (

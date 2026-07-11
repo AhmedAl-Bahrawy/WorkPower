@@ -1,7 +1,7 @@
 """Application-wide constants and defaults."""
 
 APP_NAME = "FocusLock"
-VERSION = "2.0.0"
+VERSION = "3.0.0"
 
 DEFAULT_APPS = [
     "steam.exe",
@@ -28,14 +28,15 @@ DEFAULT_SITES = [
 ]
 
 PRESETS = {
-    "Classic (25/5)": (25, 5),
-    "Long Focus (50/10)": (50, 10),
-    "Short Burst (15/3)": (15, 3),
-    "Deep Work (90/20)": (90, 20),
+    "Classic": {"work": 25, "break": 5, "long_break": 15, "cycles": 4},
+    "Extended Focus": {"work": 50, "break": 10, "long_break": 20, "cycles": 3},
+    "Sprint": {"work": 15, "break": 3, "long_break": 10, "cycles": 5},
+    "Deep Work": {"work": 90, "break": 20, "long_break": 30, "cycles": 2},
+    "Custom": {"work": 25, "break": 5, "long_break": 15, "cycles": 4},
 }
 
 SUGGESTED_APPS = {
-    "🎮  Games": [
+    "Games": [
         ("Steam", "steam.exe"),
         ("Steam Helper", "steamwebhelper.exe"),
         ("Epic Games", "EpicGamesLauncher.exe"),
@@ -47,7 +48,7 @@ SUGGESTED_APPS = {
         ("Xbox App", "XboxApp.exe"),
         ("GOG Galaxy", "GalaxyClient.exe"),
     ],
-    "💬  Social & Chat": [
+    "Social & Chat": [
         ("Discord", "discord.exe"),
         ("Slack", "slack.exe"),
         ("Microsoft Teams", "ms-teams.exe"),
@@ -56,93 +57,93 @@ SUGGESTED_APPS = {
         ("Signal", "Signal.exe"),
         ("Skype", "Skype.exe"),
     ],
-    "🎵  Media & Music": [
+    "Media & Music": [
         ("Spotify", "Spotify.exe"),
         ("Twitch", "TwitchUI.exe"),
         ("VLC", "vlc.exe"),
         ("iTunes", "iTunes.exe"),
         ("Deezer", "Deezer.exe"),
     ],
-    "🌐  Browsers": [
+    "Browsers": [
         ("Chrome", "chrome.exe"),
         ("Firefox", "firefox.exe"),
         ("Edge", "msedge.exe"),
         ("Opera", "opera.exe"),
         ("Brave", "brave.exe"),
     ],
-    "📱  Other": [
+    "Other": [
         ("Zoom", "Zoom.exe"),
         ("OBS Studio", "obs64.exe"),
         ("Photoshop", "Photoshop.exe"),
-        ("Blender", "blender.exe"),
+        ("Blender", "Blender.exe"),
     ],
 }
 
 SUGGESTED_SITES = {
-    "📱  Social Media": [
+    "Social Media": [
         "twitter.com", "x.com", "instagram.com", "facebook.com",
         "tiktok.com", "reddit.com", "snapchat.com", "linkedin.com",
         "pinterest.com", "tumblr.com",
     ],
-    "📺  Video & Streaming": [
+    "Video & Streaming": [
         "youtube.com", "twitch.tv", "netflix.com", "hulu.com",
         "disneyplus.com", "primevideo.com", "crunchyroll.com",
         "vimeo.com", "dailymotion.com",
     ],
-    "🗞️  News & Forums": [
+    "News & Forums": [
         "news.ycombinator.com", "medium.com", "9gag.com",
         "buzzfeed.com", "cnn.com", "bbc.com", "theverge.com",
     ],
-    "🛒  Shopping": [
+    "Shopping": [
         "amazon.com", "ebay.com", "aliexpress.com", "etsy.com",
         "walmart.com",
     ],
-    "💬  Messaging": [
+    "Messaging": [
         "discord.com", "slack.com", "messenger.com", "whatsapp.com",
     ],
 }
 
 THEMES = {
     "dark": {
-        "bg": "#0d0d14",
-        "surface": "#13131e",
-        "sidebar": "#0f0f18",
-        "card": "#1a1a2e",
-        "card_hover": "#20203a",
-        "accent": "#7c6cff",
-        "accent_hover": "#9488ff",
-        "accent2": "#ff5c7a",
-        "success": "#3dd68c",
-        "warn": "#f5b942",
-        "text": "#ececf4",
-        "subtext": "#8b8ba8",
-        "muted": "#5c5c78",
-        "border": "#252540",
-        "input": "#181828",
-        "danger": "#ff5c7a",
-        "timer_work": "#7c6cff",
-        "timer_break": "#3dd68c",
-        "timer_bg": "#1a1a2e",
+        "bg": "#0a0a12",
+        "surface": "#111120",
+        "sidebar": "#0c0c16",
+        "card": "#16162a",
+        "card_hover": "#1e1e3a",
+        "accent": "#8b5cf6",
+        "accent_hover": "#a78bfa",
+        "accent2": "#f472b6",
+        "success": "#34d399",
+        "warn": "#fbbf24",
+        "text": "#f0f0fa",
+        "subtext": "#7c7c9e",
+        "muted": "#4a4a6a",
+        "border": "#1e1e3a",
+        "input": "#12121f",
+        "danger": "#f472b6",
+        "timer_work": "#8b5cf6",
+        "timer_break": "#34d399",
+        "timer_bg": "#16162a",
     },
     "light": {
-        "bg": "#f0f0f8",
+        "bg": "#f4f4fb",
         "surface": "#ffffff",
-        "sidebar": "#eaeaf4",
+        "sidebar": "#ececf8",
         "card": "#ffffff",
-        "card_hover": "#f4f4fc",
-        "accent": "#6c63ff",
-        "accent_hover": "#5a52e0",
-        "accent2": "#e0456a",
-        "success": "#2cb67d",
-        "warn": "#d4920a",
-        "text": "#1a1a2e",
+        "card_hover": "#f0f0fa",
+        "accent": "#7c3aed",
+        "accent_hover": "#6d28d9",
+        "accent2": "#ec4899",
+        "success": "#10b981",
+        "warn": "#f59e0b",
+        "text": "#111120",
         "subtext": "#5a5a78",
         "muted": "#9898b0",
-        "border": "#d8d8ec",
+        "border": "#d4d4ec",
         "input": "#f8f8ff",
-        "danger": "#e0456a",
-        "timer_work": "#6c63ff",
-        "timer_break": "#2cb67d",
-        "timer_bg": "#eaeaf4",
+        "danger": "#ec4899",
+        "timer_work": "#7c3aed",
+        "timer_break": "#10b981",
+        "timer_bg": "#ececf8",
     },
 }

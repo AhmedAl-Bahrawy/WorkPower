@@ -6,30 +6,40 @@ import time
 
 
 class AppBlocker:
-    def __init__(self, blocklist):
-        self.blocklist = {b.lower() for b in blocklist}
-        self._on = False
+    """Monitors running processes and kills any that are in the enabled set.
+
+    Only one monitoring thread runs at a time – calling ``start()`` while
+    already running is a safe no-op.
+    """
+
+    def __init__(self):
+        self._enabled = set()
+        self._running = False
         self._lock = threading.Lock()
 
-    def update_blocklist(self, blocklist):
+    def set_enabled_apps(self, apps):
+        """Replace the set of exe names that should be killed."""
         with self._lock:
-            self.blocklist = {b.lower() for b in blocklist}
+            self._enabled = {a.lower() for a in apps}
 
     def start(self):
-        self._on = True
+        with self._lock:
+            if self._running:
+                return
+            self._running = True
         threading.Thread(target=self._loop, daemon=True).start()
 
     def stop(self):
-        self._on = False
+        self._running = False
 
     def _loop(self):
-        while self._on:
+        while self._running:
             self._kill()
             time.sleep(2)
 
     def _kill(self):
         with self._lock:
-            targets = set(self.blocklist)
+            targets = set(self._enabled)
         if not targets:
             return
         try:

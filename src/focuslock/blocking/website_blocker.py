@@ -1,5 +1,7 @@
 """Hosts-file based website blocking."""
 
+import threading
+import time
 from pathlib import Path
 
 HOSTS = Path(r"C:\Windows\System32\drivers\etc\hosts")
@@ -8,6 +10,7 @@ FL_END = "# FocusLock-END"
 
 
 def _strip(content):
+    """Remove everything between FocusLock markers."""
     out, inside = [], False
     for line in content.splitlines():
         if FL_START in line:
@@ -47,12 +50,14 @@ def is_valid_domain(domain):
 
 
 def block_sites(domains):
+    """Inject hosts-file entries for *domains* between FocusLock markers."""
     clean = []
     for domain in domains:
         d = normalize_domain(domain)
         if d and d not in clean:
             clean.append(d)
     if not clean:
+        unblock_sites()
         return True
     try:
         content = _strip(HOSTS.read_text(encoding="utf-8"))
@@ -72,7 +77,8 @@ def block_sites(domains):
         return False
 
 
-def unblock_sites():
+def unblock_sites(_domains=None):
+    """Remove all FocusLock entries from the hosts file."""
     try:
         HOSTS.write_text(
             _strip(HOSTS.read_text(encoding="utf-8")),
