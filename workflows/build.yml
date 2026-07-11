@@ -16,24 +16,35 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: "pip"
 
       - name: Install dependencies
-        run: pip install pyinstaller psutil sqlalchemy
-
-      - name: Build .exe
         run: |
-          pyinstaller --onefile --windowed --name FocusLock --paths src src/focuslock_app.py
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
 
-      - name: Upload artifact
+      - name: Build distribution
+        run: python build.py --dist
+
+      - name: Upload full distribution
         uses: actions/upload-artifact@v4
         with:
-          name: FocusLock-v3-Windows
-          path: dist/FocusLock.exe
+          name: FocusLock-${{ github.ref_name }}-Windows
+          path: dist/FocusLock-*/
+
+      - name: Upload exe only
+        uses: actions/upload-artifact@v4
+        with:
+          name: FocusLock-${{ github.ref_name }}-exe
+          path: dist/FocusLock/FocusLock.exe
 
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/FocusLock.exe
+          files: |
+            dist/FocusLock/FocusLock.exe
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,12 +1,12 @@
 <div align="center">
 
-# 🔒 FocusLock
+# FocusLock
 
 ### Stop procrastinating. Start studying.
 
-A Windows app that kills distracting apps and locks you into study sessions.
+A Windows desktop app that blocks distracting apps and websites during Pomodoro focus sessions.
 
-[![Stars](https://img.shields.io/github/stars/zadwen/FocusLock?style=flat-square&color=6c63ff)](https://github.com/zadwen/FocusLock/stargazers)
+[![Stars](https://img.shields.io/github/stars/zadwen/FocusLock?style=flat-square&color=8b5cf6)](https://github.com/zadwen/FocusLock/stargazers)
 [![Windows](https://img.shields.io/badge/Windows-10%2F11-0078d4?style=flat-square&logo=windows)](https://github.com/zadwen/FocusLock/releases)
 [![Python](https://img.shields.io/badge/Python-3.10+-3776ab?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-43e97b?style=flat-square)](LICENSE)
@@ -15,59 +15,55 @@ A Windows app that kills distracting apps and locks you into study sessions.
 
 ---
 
-Built this because I kept opening Steam every 10 minutes when I was supposed to be studying. Figured if I made it annoying enough to stop the session, I'd actually stay focused.
-
 ## Features
 
 | | |
 |---|---|
-| 🎮 **App Blocker** | Force-kills Steam, Discord, Epic Games, and anything else you add — every 2 seconds |
-| ⏱ **Pomodoro Timer** | Built-in timer with 4 presets. Switches automatically between focus and break |
-| ⏸ **Pause & Resume** | Pause the session (and blocking) if you need a real break |
-| 🌐 **Website Blocker** | Blocks sites via hosts file. Needs admin to work |
-| 🔐 **Password Lock** | Set a password so you can't just click "stop" when things get hard |
-| 👨‍👧 **Parent Password** | Second password that overrides the session one — useful if someone else is setting it for you |
-| 🚀 **Runs on Startup** | Opens with Windows so you don't forget to use it |
-| 🔔 **Break Notifications** | Windows notification when it's time to switch phases |
-| 🗕 **System Tray** | Minimizes to tray instead of closing |
-| 📊 **Study Stats** | Tracks sessions, total focus time, and your streak |
-| 🌙 **Dark / Light mode** | |
+| Pomodoro Timer | Circular countdown with work/break/long-break phases, 5 presets + custom durations |
+| Cycle Counter | Tracks "Pomodoro N of M" with configurable cycles before long break |
+| App Blocker | Force-kills distracting apps every 2 seconds during work phases |
+| Website Blocker | Blocks sites via hosts file modification (requires admin) |
+| Custom Durations | Set work/break/long-break/cycles via spinboxes on the session page |
+| Sound Alerts | Beep on phase change (toggle in Settings) |
+| Skip Button | Jump to the next phase without waiting |
+| Password Lock | Session password prevents pausing/stopping |
+| Parent Password | Second password that overrides session lock |
+| Auto-Start | Toggle whether phases auto-continue or pause between them |
+| Start with Windows | Registry startup entry |
+| System Tray | Minimizes to tray instead of closing |
+| Session Stats | Total sessions, focus time, streak, 7-day chart |
+| Dark / Light Theme | Toggle instantly without restarting |
 
 ---
 
-## Getting Started
+## Download
 
-### Download (easiest)
+Grab `FocusLock.exe` from the [Releases](https://github.com/zadwen/FocusLock/releases) page and run it. No Python needed.
 
-Grab `FocusLock.exe` from the [Releases](https://github.com/zadwen/FocusLock/releases) page and run it. No install needed.
+> Right-click > Run as Administrator if you want the website blocker to work.
 
-> Right-click → Run as Administrator if you want the website blocker to work.
+---
 
-### Run from source
+## Run from source
 
 ```bash
 git clone https://github.com/zadwen/FocusLock.git
 cd FocusLock
-python src/focuslock.py
+pip install -r requirements.txt
+python ./src/focuslock_app.py
 ```
 
-Needs Python 3.10+ on Windows. No pip installs required for the core app.
-
-**Optional — for system tray icon:**
-```bash
-pip install pystray Pillow
-```
+Requires Python 3.10+ on Windows.
 
 ---
 
-## How it works
+## Build a .exe
 
-1. Add the apps you want blocked in the **Blocklist** tab
-2. Pick a Pomodoro preset (or use Classic 25/5)
-3. Hit **Start Session** — blocked apps will be killed every 2 seconds
-4. Set a password in Settings if you don't trust yourself to stop early
+```bash
+python build.py --dist
+```
 
-The website blocker edits your `hosts` file to redirect blocked domains to localhost. It cleans up automatically when the session ends.
+Output goes to `dist/FocusLock-3.0.0/`. See [BUILD.md](BUILD.md) for full build details.
 
 ---
 
@@ -84,39 +80,46 @@ Fully editable from the UI.
 
 ---
 
-## Build a .exe yourself
-
-```bash
-pip install pyinstaller
-build.bat
-```
-
-Output goes to `dist/FocusLock.exe`.
-
----
-
-## Project layout
+## Project Layout
 
 ```
 FocusLock/
 ├── src/
-│   └── focuslock.py        # everything's in here
-├── assets/
-├── .github/workflows/
-│   └── build.yml           # auto-builds exe on release tags
-├── build.bat
-├── requirements.txt
-└── README.md
+│   ├── focuslock_app.py              # Main entry point
+│   └── focuslock/                    # Core package
+│       ├── constants.py              # Name, version, themes, presets
+│       ├── config.py                 # SQLAlchemy ORM (SQLite)
+│       ├── core/
+│       │   ├── timer.py              # Thread-safe PomodoroTimer
+│       │   └── security.py           # Password hashing
+│       ├── blocking/
+│       │   ├── app_blocker.py        # Process blocking
+│       │   └── website_blocker.py    # Hosts file blocking
+│       ├── platform/
+│       │   ├── startup.py            # Windows registry
+│       │   ├── notifications.py      # Toast notifications
+│       │   └── subprocess_patch.py   # Hidden console windows
+│       └── ui/
+│           ├── widgets.py            # Theme, CircularTimer, charts
+│           └── dialogs.py            # App/site picker dialogs
+├── build.py                          # Build orchestrator
+├── build.bat                         # Windows build wrapper
+├── workflows/build.yml               # GitHub Actions CI/CD
+├── requirements.txt                  # Python dependencies
+├── BUILD.md                          # Technical build docs
+├── REFERENCE.md                      # Technical reference
+├── CHANGELOG.md                      # Version history
+└── LICENSE                           # MIT
 ```
+
+---
 
 ## License
 
-MIT — do whatever you want with it.
+MIT
 
 ---
 
 <div align="center">
-Made by <a href="https://github.com/zadwen">zadwen</a> because exam season is brutal
-
-
+Made by <a href="https://github.com/zadwen">zadwen</a>
 </div>

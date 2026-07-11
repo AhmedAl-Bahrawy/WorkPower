@@ -1,4 +1,4 @@
-# FocusLock v2.0.0 - Requirements
+# FocusLock v3.0.0 - Requirements
 # Python 3.10+
 
 # UI Framework
@@ -10,5 +10,5 @@ SQLAlchemy>=2.0.0
 # Process enumeration (app picker dialog)
 psutil>=5.9.0
 
-# Building a standalone .exe (optional)
+# Building a standalone .exe (optional, for developers)
 pyinstaller>=6.0

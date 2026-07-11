@@ -1,23 +1,23 @@
 @echo off
-:: FocusLock v3.0.0 - Build Script
-:: Creates a standalone FocusLock.exe using PyInstaller
-:: Run this on Windows with Python + PyInstaller installed
-
-echo =======================================
-echo  FocusLock v3.0.0 Build Script
-echo =======================================
+:: ==========================================
+::  FocusLock v3.0.0 - Build Script
+:: ==========================================
+::  Builds a professional standalone distribution.
+::  No Python required on the target machine.
+::
+::  Usage:
+::    build.bat              Full clean + build + distribution
+::    build.bat --fast       Build only (skip clean)
+::    build.bat --clean      Clean only
+:: ==========================================
 echo.
 
-pip install pyinstaller --quiet
-
-pyinstaller ^
-  --onefile ^
-  --windowed ^
-  --name FocusLock ^
-  --icon assets/icon.ico ^
-  --paths src ^
-  src/focuslock_app.py
+if "%1"=="--clean" (
+    python build.py --clean
+) else if "%1"=="--fast" (
+    python build.py --fast --dist
+) else (
+    python build.py --dist
+)
 
 echo.
-echo Done! Find FocusLock.exe in the dist/ folder.
-pause
