@@ -5,6 +5,7 @@ Automatically migrates data from legacy JSON files on first run.
 """
 
 import json
+import logging
 import os
 from datetime import date, timedelta
 from pathlib import Path
@@ -16,6 +17,8 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Session, Mapped, mapped_column
 
 from .constants import DEFAULT_APPS, DEFAULT_SITES
+
+logger = logging.getLogger(__name__)
 
 DATA_DIR = Path(os.getenv("APPDATA", ".")) / "FocusLock"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -117,8 +120,8 @@ class Storage:
                 for domain in old.get("website_blocklist", []):
                     meta = old.get("website_blocklist_meta", {}).get(domain, {})
                     self.add_site(domain, meta.get("name", domain), meta.get("enabled", True))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to migrate legacy config: %s", exc)
 
         try:
             if LEGACY_STATS.exists():
@@ -126,8 +129,8 @@ class Storage:
                 for d, data in old.get("sessions_by_date", {}).items():
                     if isinstance(data, dict):
                         self._record_raw(d, data.get("sessions", 0), data.get("minutes", 0))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to migrate legacy stats: %s", exc)
 
         self._seed_defaults()
 

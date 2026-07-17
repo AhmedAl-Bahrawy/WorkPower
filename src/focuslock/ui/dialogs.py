@@ -10,6 +10,7 @@ from PySide6.QtCore import Qt
 from .widgets import button, label
 from ..constants import SUGGESTED_APPS, SUGGESTED_SITES
 from ..blocking.website_blocker import is_valid_domain, normalize_domain
+from ..blocking.app_blocker import CRITICAL_PROCESSES
 
 
 class CustomDialog(QDialog):
@@ -114,6 +115,8 @@ class AppPickerDialog(CustomDialog):
         )
         if file_path:
             exe = os.path.basename(file_path)
+            if exe.lower() in CRITICAL_PROCESSES:
+                return
             self.callback(exe, exe)
             self.accept()
 

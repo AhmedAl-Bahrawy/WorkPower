@@ -4,7 +4,10 @@ Uses Qt's ``QSystemTrayIcon.showMessage`` when a tray icon is available,
 falling back to a PowerShell-based ``NotifyIcon`` otherwise.
 """
 
+import logging
 import subprocess
+
+logger = logging.getLogger(__name__)
 
 
 def notify(title, message, tray_icon=None):
@@ -33,5 +36,5 @@ def notify(title, message, tray_icon=None):
         subprocess.Popen(
             ["powershell", "-WindowStyle", "Hidden", "-Command", script]
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Notification failed: %s", exc)

@@ -1,8 +1,12 @@
 """PySide6 Application Entry Point for FocusLock."""
 
 import datetime
+import logging
+import logging.handlers
+import os
 import sys
 import time
+import threading
 import winsound
 
 from PySide6.QtCore import Qt, QObject, Signal
@@ -139,8 +143,9 @@ class SetPasswordDialog(QDialog):
         if not new:
             self.error_lbl.setText("Password cannot be empty.")
             return
-        if len(new) < 4:
-            self.error_lbl.setText("Password must be at least 4 characters.")
+        min_len = 8 if self.is_parent else 4
+        if len(new) < min_len:
+            self.error_lbl.setText(f"Password must be at least {min_len} characters.")
             return
         if new != confirm:
             self.error_lbl.setText("Passwords do not match.")
@@ -153,26 +158,47 @@ class SetPasswordDialog(QDialog):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Website blocker wrapper
+# Website blocker wrapper (hosts-file I/O runs on a background thread)
 # ─────────────────────────────────────────────────────────────────────────────
+import threading as _threading
+
+
 class WebsiteBlocker:
     def __init__(self):
-        self._active = []
+        self._active: list[str] = []
         self._is_blocking = False
+        self.last_error = None
+        self._lock = _threading.Lock()
+
+    def _apply(self):
+        """Run the appropriate hosts-file operation on a daemon thread."""
+        def _worker():
+            with self._lock:
+                if self._is_blocking and self._active:
+                    ok = block_sites(self._active)
+                    self.last_error = None if ok else "permission"
+                else:
+                    ok = unblock_sites()
+                    self.last_error = None if ok else "permission"
+        t = _threading.Thread(target=_worker, daemon=True)
+        t.start()
 
     def sync(self, sites):
         self._active = list(sites)
         if self._is_blocking:
-            block_sites(self._active)
+            self._apply()
 
     def start(self):
         self._is_blocking = True
         if self._active:
-            block_sites(self._active)
+            self._apply()
 
     def stop(self):
         self._is_blocking = False
-        unblock_sites()
+        self._apply()
+
+    def clear_error(self):
+        self.last_error = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -215,6 +241,10 @@ class FocusLockApp(QMainWindow):
 
         # Suppress spinbox signals during programmatic updates
         self._spin_lock = False
+
+        # Password throttling state (BUG-12)
+        self._pw_fail_count = 0
+        self._pw_last_fail = 0.0
 
         # Timer
         self._init_timer_from_preset()
@@ -271,21 +301,63 @@ class FocusLockApp(QMainWindow):
         ph = self._password_hash()
         if not ph:
             return True  # no password set – allow everything
+
+        # BUG-12: throttle repeated failed attempts
+        if self._pw_fail_count > 0:
+            delay = min(2 ** self._pw_fail_count, 30)
+            elapsed = time.time() - self._pw_last_fail
+            if elapsed < delay:
+                remaining = int(delay - elapsed)
+                QMessageBox.information(
+                    self, "Please wait",
+                    f"Too many failed attempts. Please wait {remaining} second(s)."
+                )
+                return False
+
         dlg = PasswordDialog(self, self.theme, title, prompt)
         dlg.exec()
         if not dlg.was_confirmed():
             return False
-        return verify_password(dlg.password(), ph)
+        ok, new_hash = verify_password(dlg.password(), ph)
+        if ok:
+            self._pw_fail_count = 0
+            if new_hash:
+                self.storage.set("password_hash", new_hash)
+        else:
+            self._pw_fail_count += 1
+            self._pw_last_fail = time.time()
+        return ok
 
     def _require_parent_password(self, title="Parent Password Required"):
         ph = self._parent_password_hash()
         if not ph:
             return True
+
+        # BUG-12: throttle repeated failed attempts (shared counter with session password)
+        if self._pw_fail_count > 0:
+            delay = min(2 ** self._pw_fail_count, 30)
+            elapsed = time.time() - self._pw_last_fail
+            if elapsed < delay:
+                remaining = int(delay - elapsed)
+                QMessageBox.information(
+                    self, "Please wait",
+                    f"Too many failed attempts. Please wait {remaining} second(s)."
+                )
+                return False
+
         dlg = PasswordDialog(self, self.theme, title, "Enter parent password:")
         dlg.exec()
         if not dlg.was_confirmed():
             return False
-        return verify_password(dlg.password(), ph)
+        ok, new_hash = verify_password(dlg.password(), ph)
+        if ok:
+            self._pw_fail_count = 0
+            if new_hash:
+                self.storage.set("parent_password_hash", new_hash)
+        else:
+            self._pw_fail_count += 1
+            self._pw_last_fail = time.time()
+        return ok
 
     # ───────────────────────────────────────────────────────────────────────
     # UI construction
@@ -973,6 +1045,12 @@ class FocusLockApp(QMainWindow):
                 self.app_blocker.start()
                 if self.storage.get("block_websites", True):
                     self.site_blocker.start()
+                    if self.site_blocker.last_error == "permission":
+                        notify(
+                            APP_NAME,
+                            "Website blocking failed: run as Administrator to enable.",
+                            self.tray if hasattr(self, "tray") else None,
+                        )
             self.start_btn.setText(
                 "Pause Session" if self.timer.phase == "work" else "Pause Break"
             )
@@ -1051,6 +1129,12 @@ class FocusLockApp(QMainWindow):
             self.app_blocker.start()
             if self.storage.get("block_websites", True):
                 self.site_blocker.start()
+                if self.site_blocker.last_error == "permission":
+                    notify(
+                        APP_NAME,
+                        "Website blocking failed: run as Administrator to enable.",
+                        self.tray if hasattr(self, "tray") else None,
+                    )
 
         # Immediately sync the time display and circular timer to the new phase
         self._on_tick_ui(self.timer.remaining, phase)
@@ -1103,6 +1187,9 @@ class FocusLockApp(QMainWindow):
 
         self.theme = Theme(new_name, THEMES[new_name])
         self.theme.apply_to_app(self)
+
+        # BUG-16: suppress spinbox signal storms while rebuilding UI + timer
+        self._spin_lock = True
         self._build_ui()
 
         self._init_timer_from_preset()
@@ -1111,6 +1198,7 @@ class FocusLockApp(QMainWindow):
         self.timer.cycles = cycles
         self._update_cycle_label()
         self._on_tick_ui(rem, ph)
+        self._spin_lock = False
 
         if was_running:
             self.timer.start()
@@ -1316,6 +1404,20 @@ class FocusLockApp(QMainWindow):
 
 
 if __name__ == "__main__":
+    # Configure rotating log file
+    log_dir = os.getenv("APPDATA", ".") + "/FocusLock"
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, "focuslock.log")
+    handler = logging.handlers.RotatingFileHandler(
+        log_file, maxBytes=1_000_000, backupCount=3, encoding="utf-8"
+    )
+    handler.setLevel(logging.WARNING)
+    handler.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    ))
+    logging.root.addHandler(handler)
+    logging.root.setLevel(logging.WARNING)
+
     app = QApplication(sys.argv)
     window = FocusLockApp()
     sys.exit(app.exec())

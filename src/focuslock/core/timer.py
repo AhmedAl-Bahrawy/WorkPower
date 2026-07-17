@@ -31,6 +31,14 @@ class PomodoroTimer:
         self._running = False
         self._lock = threading.Lock()
         self.cycles = 0
+        self._target_end = None  # monotonic timestamp for current phase end
+
+    # ── helpers ────────────────────────────────────────────────────────────
+    def _get_break_cap(self):
+        """Return the cap for the current break phase (short or long)."""
+        if self.cycles > 0 and self.cycles % self.cycles_per_set == 0:
+            return self.long_break_sec
+        return self.break_sec
 
     # ── public read-only properties ───────────────────────────────────────
     @property
@@ -41,6 +49,8 @@ class PomodoroTimer:
     @property
     def remaining(self):
         with self._lock:
+            if self._running and self._target_end is not None:
+                return max(0, int(self._target_end - time.monotonic()))
             return self._rem
 
     @property
@@ -54,21 +64,21 @@ class PomodoroTimer:
         with self._lock:
             if self._phase == "work":
                 return self.work_sec
-            # Determine if this is a long break
-            if self.cycles > 0 and self.cycles % self.cycles_per_set == 0:
-                return self.long_break_sec
-            return self.break_sec
+            return self._get_break_cap()
 
     # ── controls ──────────────────────────────────────────────────────────
     def start(self):
-        if self.is_running:
-            return
         with self._lock:
+            if self._running:
+                return
             self._running = True
+            self._target_end = time.monotonic() + self._rem
         threading.Thread(target=self._loop, daemon=True).start()
 
     def pause(self):
         with self._lock:
+            if self._running and self._target_end is not None:
+                self._rem = max(0, int(self._target_end - time.monotonic()))
             self._running = False
 
     def skip(self):
@@ -76,14 +86,15 @@ class PomodoroTimer:
         with self._lock:
             if not self._running:
                 return
-            # Force rem to 0 so the loop exits and triggers _switch
-            self._rem = 0
+            # Force remaining to 0 so the loop exits and triggers _switch
+            self._target_end = time.monotonic()
 
     def reset(self):
         with self._lock:
             self._running = False
             self._phase = "work"
             self._rem = self.work_sec
+            self._target_end = None
             self.cycles = 0
         if self.on_tick:
             self.on_tick(self.work_sec, "work")
@@ -91,8 +102,11 @@ class PomodoroTimer:
     def set_remaining(self, seconds):
         """Overwrite remaining time, clamped to current phase total."""
         with self._lock:
-            cap = self.work_sec if self._phase == "work" else self.break_sec
-            self._rem = max(0, min(seconds, cap))
+            cap = self.work_sec if self._phase == "work" else self._get_break_cap()
+            clamped = max(0, min(seconds, cap))
+            self._rem = clamped
+            if self._running:
+                self._target_end = time.monotonic() + clamped
 
     def set_phase(self, phase):
         with self._lock:
@@ -105,24 +119,17 @@ class PomodoroTimer:
             with self._lock:
                 if not self._running:
                     break
-                if self._rem <= 0:
-                    break
-                rem = self._rem
+                rem = max(0, int(self._target_end - time.monotonic()))
                 phase = self._phase
             if self.on_tick:
                 self.on_tick(rem, phase)
+            if rem <= 0:
+                break
             # Sleep first on all ticks except the initial display tick
             if first:
                 first = False
             else:
                 time.sleep(1)
-            # After sleeping, decrement
-            with self._lock:
-                if not self._running:
-                    break
-                if self._rem <= 0:
-                    break
-                self._rem -= 1
         if self.is_running:
             self._switch()
 
@@ -131,7 +138,6 @@ class PomodoroTimer:
             if self._phase == "work":
                 self.cycles += 1
                 self._phase = "break"
-                # Use long break every N cycles
                 if self.cycles % self.cycles_per_set == 0:
                     self._rem = self.long_break_sec
                 else:
@@ -139,6 +145,7 @@ class PomodoroTimer:
             else:
                 self._phase = "work"
                 self._rem = self.work_sec
+            self._target_end = time.monotonic() + self._rem
             phase = self._phase
             cycles = self.cycles
         if self.on_phase:

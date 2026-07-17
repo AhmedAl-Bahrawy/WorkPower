@@ -1,10 +1,13 @@
 """Windows startup registry integration."""
 
+import logging
 import os
 import sys
 import winreg
 
 from ..constants import APP_NAME
+
+logger = logging.getLogger(__name__)
 
 REG_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
@@ -30,7 +33,8 @@ def set_startup(enable, script_path=None):
                 pass
         winreg.CloseKey(key)
         return True
-    except Exception:
+    except Exception as exc:
+        logger.warning("Failed to update startup registry: %s", exc)
         return False
 
 
