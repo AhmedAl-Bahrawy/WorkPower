@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QStackedWidget, QSystemTrayIcon, QMenu,
     QMessageBox, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QDialog, QPushButton, QFormLayout, QSpinBox, QScrollArea, QFrame,
+    QTabWidget,
 )
 
 from focuslock.platform import subprocess_patch  # noqa: F401
@@ -40,28 +41,43 @@ class PasswordDialog(QDialog):
         super().__init__(parent)
         self.theme = theme
         self.setWindowTitle(title)
-        self.setFixedSize(360, 180)
+        self.setFixedSize(400, 200)
         self._ok = False
 
         c = theme.c
         self.setStyleSheet(f"""
             QDialog {{ background-color: {c['bg']}; color: {c['text']}; }}
             QLineEdit {{ background-color: {c['input']}; color: {c['text']};
-                border: 1px solid {c['border']}; border-radius: 6px; padding: 8px 12px; }}
+                border: 1px solid {c['border']}; border-radius: 6px;
+                padding: 8px 12px; font-size: 14px; }}
             QLineEdit:focus {{ border: 1px solid {c['accent']}; }}
         """)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(12)
+        layout.setContentsMargins(28, 28, 28, 28)
+        layout.setSpacing(16)
 
         layout.addWidget(label(prompt, "text", theme))
 
+        pw_row = QHBoxLayout()
+        pw_row.setSpacing(8)
         self.pw_input = QLineEdit()
         self.pw_input.setEchoMode(QLineEdit.Password)
         self.pw_input.setPlaceholderText("Enter password...")
         self.pw_input.returnPressed.connect(self._submit)
-        layout.addWidget(self.pw_input)
+        pw_row.addWidget(self.pw_input)
+
+        self.toggle_btn = button("\U0001F441", variant="ghost", theme=theme)
+        self.toggle_btn.setFixedWidth(36)
+        self.toggle_btn.setCheckable(True)
+        self.toggle_btn.toggled.connect(self._toggle_visibility)
+        pw_row.addWidget(self.toggle_btn)
+        layout.addLayout(pw_row)
+
+        self.error_lbl = QLabel("")
+        self.error_lbl.setStyleSheet(f"color: {c['danger']}; font-size: 12px;")
+        self.error_lbl.hide()
+        layout.addWidget(self.error_lbl)
 
         row = QHBoxLayout()
         row.addStretch()
@@ -70,6 +86,14 @@ class PasswordDialog(QDialog):
         ok = button("OK", self._submit, variant="primary", theme=theme)
         row.addWidget(ok)
         layout.addLayout(row)
+
+    def _toggle_visibility(self, checked):
+        mode = QLineEdit.Normal if checked else QLineEdit.Password
+        self.pw_input.setEchoMode(mode)
+
+    def show_error(self, text):
+        self.error_lbl.setText(text)
+        self.error_lbl.show()
 
     def _submit(self):
         self._ok = True
@@ -83,53 +107,103 @@ class PasswordDialog(QDialog):
 
 
 class SetPasswordDialog(QDialog):
-    """Dialog to set or change the session password."""
-    def __init__(self, parent, theme, current_hash="", is_parent=False):
+    """Dialog to set or change a password (session or parent)."""
+    def __init__(self, parent, theme, current_hash="", is_parent=False, skip_current=False):
         super().__init__(parent)
         self.theme = theme
+        self.is_parent = is_parent
+        self._current_hash = current_hash
+        self._verified_current = skip_current
         label_prefix = "Parent " if is_parent else ""
         self.setWindowTitle(f"Set {label_prefix}Password")
-        self.setFixedSize(400, 260)
+        self.setMinimumSize(440, 320)
         self._new_hash = ""
 
         c = theme.c
         self.setStyleSheet(f"""
             QDialog {{ background-color: {c['bg']}; color: {c['text']}; }}
             QLineEdit {{ background-color: {c['input']}; color: {c['text']};
-                border: 1px solid {c['border']}; border-radius: 6px; padding: 8px 12px; }}
+                border: 1px solid {c['border']}; border-radius: 6px;
+                padding: 8px 12px; font-size: 14px; }}
             QLineEdit:focus {{ border: 1px solid {c['accent']}; }}
         """)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setContentsMargins(28, 28, 28, 28)
         layout.setSpacing(12)
 
-        self.has_current = bool(current_hash)
+        self.has_current = bool(current_hash) and not skip_current
         if self.has_current:
             layout.addWidget(label("Current password:", "text", theme))
+            cur_row = QHBoxLayout()
+            cur_row.setSpacing(8)
             self.current_input = QLineEdit()
             self.current_input.setEchoMode(QLineEdit.Password)
             self.current_input.setPlaceholderText("Enter current password...")
-            layout.addWidget(self.current_input)
+            cur_row.addWidget(self.current_input)
+            self.cur_toggle = button("\U0001F441", variant="ghost", theme=theme)
+            self.cur_toggle.setFixedWidth(36)
+            self.cur_toggle.setCheckable(True)
+            self.cur_toggle.toggled.connect(
+                lambda checked: self.current_input.setEchoMode(
+                    QLineEdit.Normal if checked else QLineEdit.Password
+                )
+            )
+            cur_row.addWidget(self.cur_toggle)
+            layout.addLayout(cur_row)
         else:
             self.current_input = None
 
+        layout.addSpacing(4)
         layout.addWidget(label("New password:", "text", theme))
+        new_row = QHBoxLayout()
+        new_row.setSpacing(8)
         self.new_input = QLineEdit()
         self.new_input.setEchoMode(QLineEdit.Password)
         self.new_input.setPlaceholderText("Enter new password...")
-        layout.addWidget(self.new_input)
+        new_row.addWidget(self.new_input)
+        self.new_toggle = button("\U0001F441", variant="ghost", theme=theme)
+        self.new_toggle.setFixedWidth(36)
+        self.new_toggle.setCheckable(True)
+        self.new_toggle.toggled.connect(
+            lambda checked: self.new_input.setEchoMode(
+                QLineEdit.Normal if checked else QLineEdit.Password
+            )
+        )
+        new_row.addWidget(self.new_toggle)
+        layout.addLayout(new_row)
 
         layout.addWidget(label("Confirm password:", "text", theme))
+        conf_row = QHBoxLayout()
+        conf_row.setSpacing(8)
         self.confirm_input = QLineEdit()
         self.confirm_input.setEchoMode(QLineEdit.Password)
         self.confirm_input.setPlaceholderText("Re-enter new password...")
         self.confirm_input.returnPressed.connect(self._submit)
-        layout.addWidget(self.confirm_input)
+        conf_row.addWidget(self.confirm_input)
+        self.conf_toggle = button("\U0001F441", variant="ghost", theme=theme)
+        self.conf_toggle.setFixedWidth(36)
+        self.conf_toggle.setCheckable(True)
+        self.conf_toggle.toggled.connect(
+            lambda checked: self.confirm_input.setEchoMode(
+                QLineEdit.Normal if checked else QLineEdit.Password
+            )
+        )
+        conf_row.addWidget(self.conf_toggle)
+        layout.addLayout(conf_row)
 
-        self.error_lbl = label("", "danger", theme)
+        min_len = 8 if is_parent else 4
+        hint = f"Min {min_len} characters"
+        hint_lbl = label(hint, "subtext", theme)
+        hint_lbl.setStyleSheet(f"color: {c['muted']}; font-size: 11px;")
+        layout.addWidget(hint_lbl)
+
+        self.error_lbl = QLabel("")
         self.error_lbl.setStyleSheet(f"color: {c['danger']}; font-size: 12px;")
+        self.error_lbl.hide()
         layout.addWidget(self.error_lbl)
+
+        layout.addStretch()
 
         row = QHBoxLayout()
         row.addStretch()
@@ -137,19 +211,41 @@ class SetPasswordDialog(QDialog):
         row.addWidget(button("Save", self._submit, variant="primary", theme=theme))
         layout.addLayout(row)
 
+    def show_error(self, text):
+        self.error_lbl.setText(text)
+        self.error_lbl.show()
+
     def _submit(self):
+        self.error_lbl.hide()
+
+        current_pw = ""
+        if self.has_current:
+            current_pw = self.current_input.text()
+            if not current_pw:
+                self.show_error("Enter your current password.")
+                return
+            ok, _ = verify_password(current_pw, self._current_hash)
+            if not ok:
+                self.show_error("Current password is incorrect.")
+                return
+
         new = self.new_input.text()
         confirm = self.confirm_input.text()
+
         if not new:
-            self.error_lbl.setText("Password cannot be empty.")
+            self.show_error("Password cannot be empty.")
             return
         min_len = 8 if self.is_parent else 4
         if len(new) < min_len:
-            self.error_lbl.setText(f"Password must be at least {min_len} characters.")
+            self.show_error(f"Password must be at least {min_len} characters.")
+            return
+        if self.has_current and new == current_pw:
+            self.show_error("New password must differ from current.")
             return
         if new != confirm:
-            self.error_lbl.setText("Passwords do not match.")
+            self.show_error("Passwords do not match.")
             return
+
         self._new_hash = hash_password(new)
         self.accept()
 
@@ -171,29 +267,37 @@ class WebsiteBlocker:
         self._lock = _threading.Lock()
 
     def _apply(self):
-        """Run the appropriate hosts-file operation on a daemon thread."""
+        """Run the appropriate hosts-file operation on a daemon thread.
+
+        When ``_is_blocking`` is True, always calls ``block_sites()`` (even
+        if ``_active`` was populated by a prior ``sync()`` call).
+        When ``_is_blocking`` is False, calls ``unblock_sites()`` only if
+        there were previously blocked entries to clean up.
+        """
         def _worker():
             with self._lock:
-                if self._is_blocking and self._active:
+                if self._is_blocking:
                     ok = block_sites(self._active)
                     self.last_error = None if ok else "permission"
-                else:
+                elif self._active:
                     ok = unblock_sites()
                     self.last_error = None if ok else "permission"
         t = _threading.Thread(target=_worker, daemon=True)
         t.start()
 
     def sync(self, sites):
+        """Update the active sites list.  Re-applies immediately if blocking."""
         self._active = list(sites)
         if self._is_blocking:
             self._apply()
 
     def start(self):
+        """Enable blocking and apply to the hosts file."""
         self._is_blocking = True
-        if self._active:
-            self._apply()
+        self._apply()
 
     def stop(self):
+        """Disable blocking and remove entries from the hosts file."""
         self._is_blocking = False
         self._apply()
 
@@ -260,6 +364,9 @@ class FocusLockApp(QMainWindow):
         self._on_tick_ui(self.timer.remaining, self.timer.phase)
         self.update_stats_ui()
         self.show()
+
+        # Install event filter to block Alt+F4 when strict mode is active
+        QApplication.instance().installEventFilter(self)
 
     # ───────────────────────────────────────────────────────────────────────
     # Timer
@@ -766,6 +873,15 @@ class FocusLockApp(QMainWindow):
         if hasattr(self, "cycle_lbl"):
             self.cycle_lbl.setText(f"Pomodoro {cur} of {total}")
 
+    def _set_controls_enabled(self, enabled):
+        """Lock/unlock preset cards and spinboxes while a session is active."""
+        if hasattr(self, "preset_cards"):
+            for card in self.preset_cards.values():
+                card.setEnabled(enabled)
+        for attr in ("work_spin", "break_spin", "long_break_spin", "cycles_spin"):
+            if hasattr(self, attr):
+                getattr(self, attr).setEnabled(enabled)
+
     # ───────────────────────────────────────────────────────────────────────
     # Applications page
     # ───────────────────────────────────────────────────────────────────────
@@ -854,165 +970,185 @@ class FocusLockApp(QMainWindow):
     # Settings page
     # ───────────────────────────────────────────────────────────────────────
     def _build_settings_page(self):
+        c = self.theme.c
+
         page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(40, 40, 40, 40)
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(40, 40, 40, 40)
+        page_layout.setSpacing(16)
 
-        layout.addWidget(label("Settings", "title", self.theme))
-        layout.addSpacing(24)
+        page_layout.addWidget(label("Settings", "title", self.theme))
 
-        # ── System card ──
-        sys_frame = make_card(self.theme)
-        sys_layout = QVBoxLayout(sys_frame)
-        sys_layout.setContentsMargins(20, 20, 20, 20)
+        # Tab widget
+        tabs = QTabWidget()
+        tabs.setStyleSheet(f"""
+            QTabWidget::pane {{
+                border: 1px solid {c['border']};
+                border-radius: 8px;
+                background: {c['card']};
+            }}
+            QTabBar::tab {{
+                background: {c['bg']};
+                color: {c['muted']};
+                border: 1px solid {c['border']};
+                border-bottom: none;
+                border-top-left-radius: 8px;
+                border-top-right-radius: 8px;
+                padding: 10px 20px;
+                margin-right: 2px;
+                font-size: 13px;
+            }}
+            QTabBar::tab:selected {{
+                background: {c['card']};
+                color: {c['accent']};
+                font-weight: bold;
+            }}
+            QTabBar::tab:hover {{
+                color: {c['text']};
+            }}
+        """)
 
-        # Start with Windows
-        row = QHBoxLayout()
-        row.addWidget(label("Start with Windows", "text", self.theme))
-        row.addStretch()
-        self.startup_tgl = ToggleButton(self.theme, initial_state=startup_is_on())
-        self.startup_tgl.toggled.connect(self._toggle_startup)
-        row.addWidget(self.startup_tgl)
-        sys_layout.addLayout(row)
+        # Helper: toggle row inside a layout
+        def _toggle_row(parent, text, storage_key, default=True, callback=None):
+            row = QHBoxLayout()
+            row.addWidget(label(text, "text", self.theme))
+            row.addStretch()
+            tgl = ToggleButton(self.theme, initial_state=self.storage.get(storage_key, default))
+            if callback:
+                tgl.toggled.connect(callback)
+            else:
+                tgl.toggled.connect(lambda s, k=storage_key: self.storage.set(k, s))
+            row.addWidget(tgl)
+            parent.addLayout(row)
+            parent.addWidget(divider(self.theme))
+            return tgl
 
-        sys_layout.addWidget(divider(self.theme))
+        # ── Tab 1: General ──────────────────────────────────────────────
+        tab_general = QWidget()
+        gen_layout = QVBoxLayout(tab_general)
+        gen_layout.setContentsMargins(24, 24, 24, 24)
+        gen_layout.setSpacing(0)
 
-        # Minimize to tray
-        row2 = QHBoxLayout()
-        row2.addWidget(label("Minimize to tray on close", "text", self.theme))
-        row2.addStretch()
-        self.tray_tgl = ToggleButton(
-            self.theme, initial_state=self.storage.get("minimize_to_tray", True)
+        gen_layout.addWidget(label("General", "heading", self.theme))
+        gen_layout.addSpacing(16)
+
+        self.startup_tgl = _toggle_row(
+            gen_layout, "Start with Windows", "startup",
+            default=startup_is_on(), callback=self._toggle_startup,
         )
-        self.tray_tgl.toggled.connect(lambda s: self.storage.set("minimize_to_tray", s))
-        row2.addWidget(self.tray_tgl)
-        sys_layout.addLayout(row2)
+        self.tray_tgl = _toggle_row(gen_layout, "Minimize to tray on close", "minimize_to_tray")
+        self.auto_start_tgl = _toggle_row(gen_layout, "Auto-start next phase", "auto_start")
 
-        sys_layout.addWidget(divider(self.theme))
+        gen_layout.addStretch()
+        tabs.addTab(tab_general, "General")
 
-        # Notify on break
-        row3 = QHBoxLayout()
-        row3.addWidget(label("Notify on break", "text", self.theme))
-        row3.addStretch()
-        self.notify_tgl = ToggleButton(
-            self.theme, initial_state=self.storage.get("notify_break", True)
+        # ── Tab 2: Session ──────────────────────────────────────────────
+        tab_session = QWidget()
+        sess_layout = QVBoxLayout(tab_session)
+        sess_layout.setContentsMargins(24, 24, 24, 24)
+        sess_layout.setSpacing(0)
+
+        sess_layout.addWidget(label("Focus Session", "heading", self.theme))
+        sess_layout.addSpacing(16)
+
+        self.block_sites_tgl = _toggle_row(
+            sess_layout, "Block websites during focus", "block_websites",
         )
-        self.notify_tgl.toggled.connect(lambda s: self.storage.set("notify_break", s))
-        row3.addWidget(self.notify_tgl)
-        sys_layout.addLayout(row3)
 
-        sys_layout.addWidget(divider(self.theme))
-
-        # Sound alerts
-        row3b = QHBoxLayout()
-        row3b.addWidget(label("Sound alert on phase change", "text", self.theme))
-        row3b.addStretch()
-        self.sound_tgl = ToggleButton(
-            self.theme, initial_state=self.storage.get("sound_alerts", True)
-        )
-        self.sound_tgl.toggled.connect(lambda s: self.storage.set("sound_alerts", s))
-        row3b.addWidget(self.sound_tgl)
-        sys_layout.addLayout(row3b)
-
-        sys_layout.addWidget(divider(self.theme))
-
-        # Block websites toggle
-        row4 = QHBoxLayout()
-        row4.addWidget(label("Block websites during focus", "text", self.theme))
-        row4.addStretch()
-        self.block_sites_tgl = ToggleButton(
-            self.theme, initial_state=self.storage.get("block_websites", True)
-        )
-        self.block_sites_tgl.toggled.connect(
-            lambda s: self.storage.set("block_websites", s)
-        )
-        row4.addWidget(self.block_sites_tgl)
-        sys_layout.addLayout(row4)
-
-        sys_layout.addWidget(divider(self.theme))
-
-        # Auto-start next phase
-        row5 = QHBoxLayout()
-        row5.addWidget(label("Auto-start next phase", "text", self.theme))
-        row5.addStretch()
-        self.auto_start_tgl = ToggleButton(
-            self.theme, initial_state=self.storage.get("auto_start", True)
-        )
-        self.auto_start_tgl.toggled.connect(lambda s: self.storage.set("auto_start", s))
-        row5.addWidget(self.auto_start_tgl)
-        sys_layout.addLayout(row5)
-
-        layout.addWidget(sys_frame)
-
-        # ── Session name card ──
-        name_frame = make_card(self.theme)
-        name_layout = QVBoxLayout(name_frame)
-        name_layout.setContentsMargins(20, 20, 20, 20)
-        name_layout.addWidget(label("Session Name", "heading", self.theme))
+        sess_layout.addWidget(label("Session Name", "subtext", self.theme))
+        sess_layout.addSpacing(6)
         self.session_name_input = QLineEdit()
         self.session_name_input.setPlaceholderText("Name your focus session...")
         self.session_name_input.setText(self._cached_session_name)
         self.session_name_input.textChanged.connect(self._on_session_name_changed)
-        name_layout.addWidget(self.session_name_input)
-        layout.addWidget(name_frame)
+        sess_layout.addWidget(self.session_name_input)
 
-        # ── Password card ──
-        pw_frame = make_card(self.theme)
-        pw_layout = QVBoxLayout(pw_frame)
-        pw_layout.setContentsMargins(20, 20, 20, 20)
-        pw_layout.addWidget(label("Security", "heading", self.theme))
+        sess_layout.addStretch()
+        tabs.addTab(tab_session, "Session")
 
-        # Session password
-        pw_row = QHBoxLayout()
-        pw_row.addWidget(label("Lock session (require password to pause/stop)", "text", self.theme))
-        pw_row.addStretch()
+        # ── Tab 3: Notifications ────────────────────────────────────────
+        tab_notif = QWidget()
+        notif_layout = QVBoxLayout(tab_notif)
+        notif_layout.setContentsMargins(24, 24, 24, 24)
+        notif_layout.setSpacing(0)
+
+        notif_layout.addWidget(label("Notifications", "heading", self.theme))
+        notif_layout.addSpacing(16)
+
+        self.notify_tgl = _toggle_row(notif_layout, "Notify on break", "notify_break")
+        self.sound_tgl = _toggle_row(notif_layout, "Sound alert on phase change", "sound_alerts")
+
+        notif_layout.addStretch()
+        tabs.addTab(tab_notif, "Notifications")
+
+        # ── Tab 4: Security ─────────────────────────────────────────────
+        tab_sec = QWidget()
+        sec_layout = QVBoxLayout(tab_sec)
+        sec_layout.setContentsMargins(24, 24, 24, 24)
+        sec_layout.setSpacing(0)
+
+        sec_layout.addWidget(label("Security", "heading", self.theme))
+        sec_layout.addSpacing(16)
+
+        # Lock session
+        lock_row = QHBoxLayout()
+        lock_row.addWidget(label("Lock session (password to pause/stop)", "text", self.theme))
+        lock_row.addStretch()
         self.lock_session_tgl = ToggleButton(
-            self.theme,
-            initial_state=bool(self.storage.get("password_hash", "")),
+            self.theme, initial_state=bool(self.storage.get("password_hash", "")),
         )
         self.lock_session_tgl.toggled.connect(self._on_lock_session_toggle)
-        pw_row.addWidget(self.lock_session_tgl)
-        pw_layout.addLayout(pw_row)
+        lock_row.addWidget(self.lock_session_tgl)
+        sec_layout.addLayout(lock_row)
+        sec_layout.addWidget(divider(self.theme))
 
-        pw_layout.addWidget(divider(self.theme))
-
-        # Set / change password
-        pw_row2 = QHBoxLayout()
-        pw_row2.addWidget(label("Session password", "text", self.theme))
-        pw_row2.addStretch()
-        set_pw_btn = button(
-            "Set Password", self._set_password, variant="secondary", theme=self.theme
+        # Strict mode
+        self.strict_mode_tgl = _toggle_row(
+            sec_layout, "Strict mode (password to quit)", "strict_mode", default=False,
         )
-        pw_row2.addWidget(set_pw_btn)
-        pw_layout.addLayout(pw_row2)
 
-        pw_layout.addWidget(divider(self.theme))
+        # Session password
+        sec_layout.addWidget(label("Session Password", "subtext", self.theme))
+        sec_layout.addSpacing(6)
+        spw_row = QHBoxLayout()
+        self.pw_status_lbl = label(self._pw_status_text(), "text", self.theme)
+        spw_row.addWidget(self.pw_status_lbl)
+        spw_row.addStretch()
+        set_pw_btn = button("Set Password", self._set_password, variant="secondary", theme=self.theme)
+        spw_row.addWidget(set_pw_btn)
+        sec_layout.addLayout(spw_row)
+        sec_layout.addWidget(divider(self.theme))
 
         # Parent password
-        pw_row3 = QHBoxLayout()
-        pw_row3.addWidget(label("Parent password (for locked settings)", "text", self.theme))
-        pw_row3.addStretch()
-        set_parent_btn = button(
-            "Set Parent Password", self._set_parent_password, variant="secondary", theme=self.theme
-        )
-        pw_row3.addWidget(set_parent_btn)
-        pw_layout.addLayout(pw_row3)
+        sec_layout.addWidget(label("Parent Password", "subtext", self.theme))
+        sec_layout.addSpacing(6)
+        ppw_row = QHBoxLayout()
+        self.parent_pw_status_lbl = label(self._parent_pw_status_text(), "text", self.theme)
+        ppw_row.addWidget(self.parent_pw_status_lbl)
+        ppw_row.addStretch()
+        set_parent_btn = button("Set Parent Password", self._set_parent_password, variant="secondary", theme=self.theme)
+        ppw_row.addWidget(set_parent_btn)
+        sec_layout.addLayout(ppw_row)
+        sec_layout.addWidget(divider(self.theme))
 
-        pw_layout.addWidget(divider(self.theme))
-
-        # Clear all passwords
+        # Clear
         clear_row = QHBoxLayout()
         clear_row.addStretch()
-        clear_pw_btn = button(
-            "Clear All Passwords", self._clear_passwords, variant="danger", theme=self.theme
-        )
+        clear_pw_btn = button("Clear All Passwords", self._clear_passwords, variant="danger", theme=self.theme)
         clear_row.addWidget(clear_pw_btn)
-        pw_layout.addLayout(clear_row)
+        sec_layout.addLayout(clear_row)
 
-        layout.addWidget(pw_frame)
+        sec_layout.addStretch()
+        tabs.addTab(tab_sec, "Security")
 
-        layout.addStretch()
+        page_layout.addWidget(tabs)
         return page
+
+    def _pw_status_text(self):
+        return "Set" if self.storage.get("password_hash", "") else "Not set"
+
+    def _parent_pw_status_text(self):
+        return "Set" if self.storage.get("parent_password_hash", "") else "Not set"
 
     # ───────────────────────────────────────────────────────────────────────
     # Session name (cached)
@@ -1038,6 +1174,7 @@ class FocusLockApp(QMainWindow):
                 self.site_blocker.stop()
             self.start_btn.setText("Resume Session")
             self.circular_timer.set_running(False)
+            self._set_controls_enabled(True)
         else:
             self.timer.start()
             self._track_work_time(start=True)
@@ -1055,6 +1192,7 @@ class FocusLockApp(QMainWindow):
                 "Pause Session" if self.timer.phase == "work" else "Pause Break"
             )
             self.circular_timer.set_running(True)
+            self._set_controls_enabled(False)
 
     def _skip_timer(self):
         if self.timer.is_running:
@@ -1074,6 +1212,7 @@ class FocusLockApp(QMainWindow):
             self.site_blocker.stop()
         self.start_btn.setText("Start Session")
         self.circular_timer.set_running(False)
+        self._set_controls_enabled(True)
         self.phase_lbl.setText("FOCUS TIME")
         self.phase_lbl.setStyleSheet(
             f"font-size: 16px; font-weight: bold; color: {self.theme.c['accent']}; "
@@ -1145,12 +1284,14 @@ class FocusLockApp(QMainWindow):
                 "Pause Session" if phase == "work" else "Pause Break"
             )
             self.circular_timer.set_running(True)
+            self._set_controls_enabled(False)
             if phase == "work":
                 self._track_work_time(start=True)
         else:
             self.timer.pause()
             self.start_btn.setText("Resume Session")
             self.circular_timer.set_running(False)
+            self._set_controls_enabled(True)
             if phase == "work":
                 self._track_work_time(start=True)
 
@@ -1220,25 +1361,47 @@ class FocusLockApp(QMainWindow):
     def _on_lock_session_toggle(self, state):
         if state:
             if not self._password_hash():
-                self._set_password()
-                if not self._password_hash():
+                # No password set — open dialog to create one (skip current field)
+                dlg = SetPasswordDialog(self, self.theme, skip_current=True)
+                if dlg.exec() == QDialog.Accepted and dlg.new_hash():
+                    self.storage.set("password_hash", dlg.new_hash())
+                else:
+                    # User cancelled — revert toggle
                     self.lock_session_tgl.setChecked(False, animate=False)
+            # Password already exists — toggle is on, nothing to do
         else:
+            # Turning off — requires parent password
             if not self._require_parent_password("Disable Session Lock"):
                 self.lock_session_tgl.setChecked(True, animate=False)
 
     def _set_password(self):
-        dlg = SetPasswordDialog(self, self.theme, self._password_hash())
+        ph = self._password_hash()
+        if ph:
+            # Password exists — show current password field
+            dlg = SetPasswordDialog(self, self.theme, current_hash=ph)
+        else:
+            # No password yet — skip current field
+            dlg = SetPasswordDialog(self, self.theme, skip_current=True)
         if dlg.exec() == QDialog.Accepted and dlg.new_hash():
             self.storage.set("password_hash", dlg.new_hash())
             self.lock_session_tgl.setChecked(True, animate=False)
+            if hasattr(self, "pw_status_lbl"):
+                self.pw_status_lbl.setText(self._pw_status_text())
 
     def _set_parent_password(self):
-        if not self._require_parent_password():
-            return
-        dlg = SetPasswordDialog(self, self.theme, self._parent_password_hash(), is_parent=True)
+        pph = self._parent_password_hash()
+        if pph:
+            # Parent password exists — verify current first, then change
+            if not self._require_parent_password("Change Parent Password"):
+                return
+            dlg = SetPasswordDialog(self, self.theme, current_hash=pph, is_parent=True)
+        else:
+            # No parent password yet — create directly
+            dlg = SetPasswordDialog(self, self.theme, is_parent=True, skip_current=True)
         if dlg.exec() == QDialog.Accepted and dlg.new_hash():
             self.storage.set("parent_password_hash", dlg.new_hash())
+            if hasattr(self, "parent_pw_status_lbl"):
+                self.parent_pw_status_lbl.setText(self._parent_pw_status_text())
 
     def _clear_passwords(self):
         if not self._require_parent_password("Clear Passwords"):
@@ -1246,6 +1409,10 @@ class FocusLockApp(QMainWindow):
         self.storage.set("password_hash", "")
         self.storage.set("parent_password_hash", "")
         self.lock_session_tgl.setChecked(False, animate=False)
+        if hasattr(self, "pw_status_lbl"):
+            self.pw_status_lbl.setText(self._pw_status_text())
+        if hasattr(self, "parent_pw_status_lbl"):
+            self.parent_pw_status_lbl.setText(self._parent_pw_status_text())
 
     # ───────────────────────────────────────────────────────────────────────
     # Blocklist – Applications
@@ -1373,7 +1540,7 @@ class FocusLockApp(QMainWindow):
         self.tray_menu.addAction(show_action)
 
         quit_action = QAction("Exit", self)
-        quit_action.triggered.connect(self._quit)
+        quit_action.triggered.connect(self._tray_quit)
         self.tray_menu.addAction(quit_action)
 
         self.tray.setContextMenu(self.tray_menu)
@@ -1385,7 +1552,18 @@ class FocusLockApp(QMainWindow):
             self.showNormal()
             self.activateWindow()
 
+    def eventFilter(self, obj, event):
+        """Block Alt+F4 (CloseEvent with Alt modifier) when strict mode is active."""
+        if event.type() == event.Type.Close:
+            if self._is_strict_locked():
+                event.ignore()
+                return True
+        return super().eventFilter(obj, event)
+
     def closeEvent(self, event):
+        if self._is_strict_locked():
+            event.ignore()
+            return
         if self.storage.get("minimize_to_tray", True):
             event.ignore()
             self.hide()
@@ -1395,6 +1573,8 @@ class FocusLockApp(QMainWindow):
             event.accept()
 
     def _quit(self):
+        if self._is_strict_locked():
+            return
         if self.timer.is_running:
             self.timer.pause()
         self.app_blocker.stop()
@@ -1402,8 +1582,32 @@ class FocusLockApp(QMainWindow):
         self.storage.close()
         QApplication.quit()
 
+    def _is_strict_locked(self):
+        """Return True if strict mode is active and session is locked + running."""
+        if not self.storage.get("strict_mode", False):
+            return False
+        if not self._password_hash():
+            return False
+        if not self.timer.is_running:
+            return False
+        return True
+
+    def _tray_quit(self):
+        """Tray Exit action — respects strict mode."""
+        if self._is_strict_locked():
+            if not self._require_parent_password("Unlock to Quit"):
+                return
+        self._quit()
+
 
 if __name__ == "__main__":
+    # Request Administrator privileges (needed for hosts-file website blocking)
+    from focuslock.platform.elevate import is_admin, request_elevation
+    if not is_admin():
+        if request_elevation():
+            sys.exit(0)
+        # If elevation denied, continue without admin (website blocking won't work)
+
     # Configure rotating log file
     log_dir = os.getenv("APPDATA", ".") + "/FocusLock"
     os.makedirs(log_dir, exist_ok=True)
