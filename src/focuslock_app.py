@@ -25,6 +25,7 @@ from focuslock.core import PomodoroTimer, hash_password, verify_password
 from focuslock.blocking import AppBlocker, block_sites, unblock_sites
 from focuslock.platform.startup import set_startup, startup_is_on
 from focuslock.platform.notifications import notify
+from focuslock.services import AuthService, BlocklistService, SessionService
 from focuslock.ui.widgets import (
     Theme, CircularTimer, BarChart, ToggleButton,
     button, label, divider, make_card, ScrollableFrame,
@@ -339,19 +340,16 @@ class FocusLockApp(QMainWindow):
         self.site_blocker = WebsiteBlocker()
         self.site_blocker.sync(self.storage.get_enabled_sites())
 
-        # Actual-time tracking
-        self._work_start_time = None
-        self._actual_work_minutes = 0
-
         # Suppress spinbox signals during programmatic updates
         self._spin_lock = False
 
-        # Password throttling state (BUG-12)
-        self._pw_fail_count = 0
-        self._pw_last_fail = 0.0
-
         # Timer
         self._init_timer_from_preset()
+
+        # Services
+        self.auth = AuthService(self.storage)
+        self.blocklist = BlocklistService(self.storage, self.app_blocker, self.site_blocker)
+        self.session_svc = SessionService(self.storage, self.timer)
 
         # UI
         self._build_ui()
@@ -386,6 +384,8 @@ class FocusLockApp(QMainWindow):
             long_break_min=pc.get("long_break", 0),
             cycles_per_set=pc.get("cycles", 4),
         )
+        if hasattr(self, "session_svc"):
+            self.session_svc.replace_timer(self.timer)
 
     def _play_sound(self):
         """Play a short system beep to alert the user."""
@@ -397,73 +397,47 @@ class FocusLockApp(QMainWindow):
     # ───────────────────────────────────────────────────────────────────────
     # Password helpers
     # ───────────────────────────────────────────────────────────────────────
-    def _password_hash(self):
-        return self.storage.get("password_hash", "")
-
-    def _parent_password_hash(self):
-        return self.storage.get("parent_password_hash", "")
-
     def _require_password(self, title="Password Required", prompt="Enter password to continue:"):
         """Show password dialog.  Returns True if verified, False if cancelled."""
-        ph = self._password_hash()
-        if not ph:
-            return True  # no password set – allow everything
+        if not self.auth.has_password():
+            return True
 
-        # BUG-12: throttle repeated failed attempts
-        if self._pw_fail_count > 0:
-            delay = min(2 ** self._pw_fail_count, 30)
-            elapsed = time.time() - self._pw_last_fail
-            if elapsed < delay:
-                remaining = int(delay - elapsed)
-                QMessageBox.information(
-                    self, "Please wait",
-                    f"Too many failed attempts. Please wait {remaining} second(s)."
-                )
-                return False
+        delay = self.auth.throttle_delay()
+        if delay:
+            QMessageBox.information(
+                self, "Please wait",
+                f"Too many failed attempts. Please wait {delay} second(s)."
+            )
+            return False
 
         dlg = PasswordDialog(self, self.theme, title, prompt)
         dlg.exec()
         if not dlg.was_confirmed():
             return False
-        ok, new_hash = verify_password(dlg.password(), ph)
-        if ok:
-            self._pw_fail_count = 0
-            if new_hash:
-                self.storage.set("password_hash", new_hash)
-        else:
-            self._pw_fail_count += 1
-            self._pw_last_fail = time.time()
+        ok, new_hash = self.auth.verify_session_password(dlg.password())
+        if ok and new_hash:
+            self.storage.set("password_hash", new_hash)
         return ok
 
     def _require_parent_password(self, title="Parent Password Required"):
-        ph = self._parent_password_hash()
-        if not ph:
+        if not self.auth.has_parent_password():
             return True
 
-        # BUG-12: throttle repeated failed attempts (shared counter with session password)
-        if self._pw_fail_count > 0:
-            delay = min(2 ** self._pw_fail_count, 30)
-            elapsed = time.time() - self._pw_last_fail
-            if elapsed < delay:
-                remaining = int(delay - elapsed)
-                QMessageBox.information(
-                    self, "Please wait",
-                    f"Too many failed attempts. Please wait {remaining} second(s)."
-                )
-                return False
+        delay = self.auth.throttle_delay()
+        if delay:
+            QMessageBox.information(
+                self, "Please wait",
+                f"Too many failed attempts. Please wait {delay} second(s)."
+            )
+            return False
 
         dlg = PasswordDialog(self, self.theme, title, "Enter parent password:")
         dlg.exec()
         if not dlg.was_confirmed():
             return False
-        ok, new_hash = verify_password(dlg.password(), ph)
-        if ok:
-            self._pw_fail_count = 0
-            if new_hash:
-                self.storage.set("parent_password_hash", new_hash)
-        else:
-            self._pw_fail_count += 1
-            self._pw_last_fail = time.time()
+        ok, new_hash = self.auth.verify_parent_password(dlg.password())
+        if ok and new_hash:
+            self.storage.set("parent_password_hash", new_hash)
         return ok
 
     # ───────────────────────────────────────────────────────────────────────
@@ -857,6 +831,7 @@ class FocusLockApp(QMainWindow):
             long_break_min=pc.get("long_break", 0),
             cycles_per_set=pc.get("cycles", 4),
         )
+        self.session_svc.replace_timer(self.timer)
         self.timer.set_remaining(remaining)
         self.timer.set_phase(ph)
         self.timer.cycles = cycles
@@ -1145,10 +1120,10 @@ class FocusLockApp(QMainWindow):
         return page
 
     def _pw_status_text(self):
-        return "Set" if self.storage.get("password_hash", "") else "Not set"
+        return "Set" if self.auth.has_password() else "Not set"
 
     def _parent_pw_status_text(self):
-        return "Set" if self.storage.get("parent_password_hash", "") else "Not set"
+        return "Set" if self.auth.has_parent_password() else "Not set"
 
     # ───────────────────────────────────────────────────────────────────────
     # Session name (cached)
@@ -1169,9 +1144,7 @@ class FocusLockApp(QMainWindow):
                 return
             self.timer.pause()
             self._track_work_time(pause=True)
-            self.app_blocker.stop()
-            if self.storage.get("block_websites", True):
-                self.site_blocker.stop()
+            self.blocklist.stop_blockers()
             self.start_btn.setText("Resume Session")
             self.circular_timer.set_running(False)
             self._set_controls_enabled(True)
@@ -1179,15 +1152,13 @@ class FocusLockApp(QMainWindow):
             self.timer.start()
             self._track_work_time(start=True)
             if self.timer.phase == "work":
-                self.app_blocker.start()
-                if self.storage.get("block_websites", True):
-                    self.site_blocker.start()
-                    if self.site_blocker.last_error == "permission":
-                        notify(
-                            APP_NAME,
-                            "Website blocking failed: run as Administrator to enable.",
-                            self.tray if hasattr(self, "tray") else None,
-                        )
+                self.blocklist.start_blockers("work", self.storage.get("block_websites", True))
+                if self.blocklist.has_site_permission_error():
+                    notify(
+                        APP_NAME,
+                        "Website blocking failed: run as Administrator to enable.",
+                        self.tray if hasattr(self, "tray") else None,
+                    )
             self.start_btn.setText(
                 "Pause Session" if self.timer.phase == "work" else "Pause Break"
             )
@@ -1207,9 +1178,7 @@ class FocusLockApp(QMainWindow):
                 return
         self.timer.reset()
         self._track_work_time(reset=True)
-        self.app_blocker.stop()
-        if self.storage.get("block_websites", True):
-            self.site_blocker.stop()
+        self.blocklist.stop_blockers()
         self.start_btn.setText("Start Session")
         self.circular_timer.set_running(False)
         self._set_controls_enabled(True)
@@ -1260,20 +1229,16 @@ class FocusLockApp(QMainWindow):
         self._update_cycle_label()
 
         if phase == "break":
-            self.app_blocker.stop()
-            if self.storage.get("block_websites", True):
-                self.site_blocker.stop()
+            self.blocklist.stop_blockers()
             self._record_session()
         else:
-            self.app_blocker.start()
-            if self.storage.get("block_websites", True):
-                self.site_blocker.start()
-                if self.site_blocker.last_error == "permission":
-                    notify(
-                        APP_NAME,
-                        "Website blocking failed: run as Administrator to enable.",
-                        self.tray if hasattr(self, "tray") else None,
-                    )
+            self.blocklist.start_blockers("work", self.storage.get("block_websites", True))
+            if self.blocklist.has_site_permission_error():
+                notify(
+                    APP_NAME,
+                    "Website blocking failed: run as Administrator to enable.",
+                    self.tray if hasattr(self, "tray") else None,
+                )
 
         # Immediately sync the time display and circular timer to the new phase
         self._on_tick_ui(self.timer.remaining, phase)
@@ -1299,15 +1264,12 @@ class FocusLockApp(QMainWindow):
     # Actual work time tracking
     # ───────────────────────────────────────────────────────────────────────
     def _track_work_time(self, start=False, pause=False, reset=False):
-        if start and self.timer.phase == "work":
-            self._work_start_time = time.time()
-        elif pause and self._work_start_time is not None:
-            elapsed = time.time() - self._work_start_time
-            self._actual_work_minutes += elapsed / 60.0
-            self._work_start_time = None
+        if start:
+            self.session_svc.track_start()
+        elif pause:
+            self.session_svc.track_pause()
         elif reset:
-            self._work_start_time = None
-            self._actual_work_minutes = 0
+            self.session_svc.track_reset()
 
     # ───────────────────────────────────────────────────────────────────────
     # Theme
@@ -1323,8 +1285,7 @@ class FocusLockApp(QMainWindow):
 
         if was_running:
             self.timer.pause()
-        self.app_blocker.stop()
-        self.site_blocker.stop()
+        self.blocklist.stop_blockers()
 
         self.theme = Theme(new_name, THEMES[new_name])
         self.theme.apply_to_app(self)
@@ -1345,9 +1306,7 @@ class FocusLockApp(QMainWindow):
             self.timer.start()
             self.circular_timer.set_running(True)
             if ph == "work":
-                self.app_blocker.start()
-                if self.storage.get("block_websites", True):
-                    self.site_blocker.start()
+                self.blocklist.start_blockers("work", self.storage.get("block_websites", True))
                 self._track_work_time(start=True)
 
         self.update_stats_ui()
@@ -1360,7 +1319,7 @@ class FocusLockApp(QMainWindow):
     # ───────────────────────────────────────────────────────────────────────
     def _on_lock_session_toggle(self, state):
         if state:
-            if not self._password_hash():
+            if not self.auth.has_password():
                 # No password set — open dialog to create one (skip current field)
                 dlg = SetPasswordDialog(self, self.theme, skip_current=True)
                 if dlg.exec() == QDialog.Accepted and dlg.new_hash():
@@ -1375,10 +1334,9 @@ class FocusLockApp(QMainWindow):
                 self.lock_session_tgl.setChecked(True, animate=False)
 
     def _set_password(self):
-        ph = self._password_hash()
-        if ph:
+        if self.auth.has_password():
             # Password exists — show current password field
-            dlg = SetPasswordDialog(self, self.theme, current_hash=ph)
+            dlg = SetPasswordDialog(self, self.theme, current_hash=self.auth.password_hash())
         else:
             # No password yet — skip current field
             dlg = SetPasswordDialog(self, self.theme, skip_current=True)
@@ -1389,12 +1347,11 @@ class FocusLockApp(QMainWindow):
                 self.pw_status_lbl.setText(self._pw_status_text())
 
     def _set_parent_password(self):
-        pph = self._parent_password_hash()
-        if pph:
+        if self.auth.has_parent_password():
             # Parent password exists — verify current first, then change
             if not self._require_parent_password("Change Parent Password"):
                 return
-            dlg = SetPasswordDialog(self, self.theme, current_hash=pph, is_parent=True)
+            dlg = SetPasswordDialog(self, self.theme, current_hash=self.auth.parent_password_hash(), is_parent=True)
         else:
             # No parent password yet — create directly
             dlg = SetPasswordDialog(self, self.theme, is_parent=True, skip_current=True)
@@ -1406,8 +1363,7 @@ class FocusLockApp(QMainWindow):
     def _clear_passwords(self):
         if not self._require_parent_password("Clear Passwords"):
             return
-        self.storage.set("password_hash", "")
-        self.storage.set("parent_password_hash", "")
+        self.auth.clear_all()
         self.lock_session_tgl.setChecked(False, animate=False)
         if hasattr(self, "pw_status_lbl"):
             self.pw_status_lbl.setText(self._pw_status_text())
@@ -1422,18 +1378,15 @@ class FocusLockApp(QMainWindow):
         dlg.exec()
 
     def _add_app(self, name, exe):
-        self.storage.add_app(exe, name, True)
-        self.app_blocker.set_enabled_apps(self.storage.get_enabled_apps())
+        self.blocklist.add_app(exe, name)
         self._rebuild_app_cards()
 
     def _remove_app(self, exe):
-        self.storage.remove_app(exe)
-        self.app_blocker.set_enabled_apps(self.storage.get_enabled_apps())
+        self.blocklist.remove_app(exe)
         self._rebuild_app_cards()
 
     def _toggle_app(self, exe, state):
-        self.storage.toggle_app(exe, state)
-        self.app_blocker.set_enabled_apps(self.storage.get_enabled_apps())
+        self.blocklist.toggle_app(exe, state)
 
     def _rebuild_app_cards(self):
         layout = self.app_scroll.inner_layout
@@ -1443,7 +1396,7 @@ class FocusLockApp(QMainWindow):
                 w.setParent(None)
                 w.deleteLater()
 
-        apps = self.storage.get_apps()
+        apps = self.blocklist.get_apps()
         count = 0
         for app in apps:
             card = BlocklistItemCard(
@@ -1462,18 +1415,15 @@ class FocusLockApp(QMainWindow):
         dlg.exec()
 
     def _add_site(self, name, domain):
-        self.storage.add_site(domain, name, True)
-        self.site_blocker.sync(self.storage.get_enabled_sites())
+        self.blocklist.add_site(domain, name)
         self._rebuild_site_cards()
 
     def _remove_site(self, domain):
-        self.storage.remove_site(domain)
-        self.site_blocker.sync(self.storage.get_enabled_sites())
+        self.blocklist.remove_site(domain)
         self._rebuild_site_cards()
 
     def _toggle_site(self, domain, state):
-        self.storage.toggle_site(domain, state)
-        self.site_blocker.sync(self.storage.get_enabled_sites())
+        self.blocklist.toggle_site(domain, state)
 
     def _rebuild_site_cards(self):
         layout = self.site_scroll.inner_layout
@@ -1483,7 +1433,7 @@ class FocusLockApp(QMainWindow):
                 w.setParent(None)
                 w.deleteLater()
 
-        sites = self.storage.get_sites()
+        sites = self.blocklist.get_sites()
         count = 0
         for site in sites:
             card = BlocklistItemCard(
@@ -1498,13 +1448,7 @@ class FocusLockApp(QMainWindow):
     # Stats
     # ───────────────────────────────────────────────────────────────────────
     def _record_session(self):
-        if self._actual_work_minutes > 0:
-            work_min = max(1, round(self._actual_work_minutes))
-        else:
-            work_min = self.timer.work_sec // 60
-        self.storage.record_session(work_min)
-        self._actual_work_minutes = 0
-        self._work_start_time = None
+        self.session_svc.record_session()
         self.update_stats_ui()
 
     def update_stats_ui(self):
@@ -1577,8 +1521,7 @@ class FocusLockApp(QMainWindow):
             return
         if self.timer.is_running:
             self.timer.pause()
-        self.app_blocker.stop()
-        self.site_blocker.stop()
+        self.blocklist.stop_blockers()
         self.storage.close()
         QApplication.quit()
 
@@ -1586,7 +1529,7 @@ class FocusLockApp(QMainWindow):
         """Return True if strict mode is active and session is locked + running."""
         if not self.storage.get("strict_mode", False):
             return False
-        if not self._password_hash():
+        if not self.auth.has_password():
             return False
         if not self.timer.is_running:
             return False

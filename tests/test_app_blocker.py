@@ -113,35 +113,28 @@ class TestSetEnabledApps:
     def test_filters_critical_processes(self):
         blocker = AppBlocker()
         blocker.set_enabled_apps(["chrome.exe", "explorer.exe", "firefox.exe"])
-        # Only chrome and firefox should remain (explorer filtered out)
-        # We can't directly read _enabled from outside, but we can verify
-        # that set_enabled_apps doesn't raise and completes
-        assert True
+        assert blocker._enabled == {"chrome.exe", "firefox.exe"}
 
     def test_empty_list(self):
         blocker = AppBlocker()
         blocker.set_enabled_apps([])
-        assert True
+        assert blocker._enabled == set()
 
     def test_all_critical_filtered(self):
         blocker = AppBlocker()
         blocker.set_enabled_apps(["explorer.exe", "dwm.exe", "csrss.exe"])
-        # After filtering, enabled set should be empty
-        # Verify by checking that _kill finds no targets
-        assert True
+        assert blocker._enabled == set()
 
     def test_stores_lowercase(self):
         blocker = AppBlocker()
         blocker.set_enabled_apps(["Chrome.exe", "FIREFOX.EXE"])
-        # Internal set should be lowercase
-        assert True
+        assert blocker._enabled == {"chrome.exe", "firefox.exe"}
 
     def test_replaces_previous(self):
         blocker = AppBlocker()
         blocker.set_enabled_apps(["chrome.exe"])
         blocker.set_enabled_apps(["firefox.exe"])
-        # Only firefox should remain
-        assert True
+        assert blocker._enabled == {"firefox.exe"}
 
 
 # ═══════════════════════════════════════════════════════════════════════════
